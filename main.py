@@ -4,37 +4,35 @@ import cv2
 from matplotlib import pyplot as plt
 from commom import * 
 
-width, height = 4032, 3024
-imgShape = (height, width)
+
 calibrationData = pd.read_pickle("Camera Parameters/calibration.pkl")
 cameraMatrix, distCoeffs = calibrationData[0], calibrationData[1][0]
-stereoImgSelection = {
-    0: 'final_',
-    1: 'corr_',
-    2: 'small_'
-}
-imgPrefix = stereoImgSelection[0]
-imgL = cv2.imread("Stereo Images/" + imgPrefix + 'left.jpg', cv2.IMREAD_GRAYSCALE)
-imgR = cv2.imread("Stereo Images/" + imgPrefix + 'right.jpg', cv2.IMREAD_GRAYSCALE)
-imgL = cv2.undistort(imgL, cameraMatrix, distCoeffs, None)
-imgR = cv2.undistort(imgR, cameraMatrix, distCoeffs, None)
+f = cameraMatrix[0][0]
 
-print(imgL.shape)
+#b = 0.1 # m
+#R = np.identity(3)
+#T = np.array([[0], [-b], [0]])
 
-imgPercentage = 0.3
-width, height = int(width*imgPercentage), int(height*imgPercentage)
-imgL = cv2.resize(imgL, (width, height), interpolation = cv2.INTER_AREA)
-imgR = cv2.resize(imgR, (width, height), interpolation = cv2.INTER_AREA)
+imgL, imgR, imgShape = getStereoImages(0, cameraMatrix, distCoeffs)
+height, width = imgShape
 
-#######################################################
+pct = 1
+imgL, imgR = resizeStereoImages(imgL, imgR, pct)
 
-#kp = fastFeatureDetector(imgL, threshold=5, type=2, showImg=True)
-#kp, des = orbDetector(imgL, 500)
-n = 10_000
-segmentationBlocks = (2, 2)
+numFeatures = 10_000
+leftKeypoints, leftDescriptor = orbDetectorAndDescriptor(imgL, numFeatures, showImage=False)
+rightKeypoints, rightDescriptor = orbDetectorAndDescriptor(imgR, numFeatures, showImage=False)
 
-kp = segmentedOrb(imgL, n, nBlocks=segmentationBlocks)
-drawKeypoints(imgL, kp)
+bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)                               # Create BFMatcher object
+matches = bf.match(leftDescriptor, rightDescriptor)                                 # Match descriptors.
+matches = sorted(matches, key = lambda x:x.distance)                                # Sort them in the order of their distance.
+numMatches = 1_000
+final_matches = matches[:numMatches]                                                # Select first 'n' matches.
 
-############# My part of the code above ############
+leftPoints, rightPoints = getMatchesCoordinates(final_matches, leftKeypoints, rightKeypoints)
+
+externalParameters, inliers = cv2.estimateAffine2D(leftPoints, rightPoints, confidence=0.999, refineIters=1_000, 
+                                                    maxIters=10_000, method=cv2.RANSAC, ransacReprojThreshold=0.01*imgL.shape[0])
+print(f"Ratio = {inliersRatio(inliers)}")
+print(externalParameters)
 
